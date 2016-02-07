@@ -1,10 +1,10 @@
 require 'watir-webdriver'
 
 require_relative 'abstract_interface'
-require_relative 'account'
+require_relative 'account_interface'
 require_relative 'hash_to_openstruct'
 
-class Bank
+class BankInterface
   include AbstractInterface
   include Logging
 

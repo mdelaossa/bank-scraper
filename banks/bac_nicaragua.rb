@@ -1,8 +1,8 @@
 require 'ostruct'
 
-require_relative '../lib/bank'
+require_relative '../lib/bank_interface'
 
-class BacNicaragua < Bank
+class BacNicaragua < BankInterface
 
   ACCOUNT_TYPES = {
       banking: /^CUENTAS BANCARIAS/,
