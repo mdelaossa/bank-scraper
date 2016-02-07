@@ -87,22 +87,23 @@ class BacNicaragua < BankInterface
 
     DEFAULT_PARAMS = {
         serverDate:	Date.today.strftime("%d/%m/%Y"),
-        lastMonthDate: (Date.today - Date.today.day).strftime("%d/%m/%Y")
-#    initDate	01/02/2016
-#    endDate	07/02/2016
+        lastMonthDate: last_month.strftime("%d/%m/%Y"),
+        initDate: one_month_ago.strftime("%d/%m/%Y"),
+        endDate: Date.today.strftime("%d/%m/%Y")
 #    initAmount
 #    limitAmount
 #    initReference
 #    endReference
     }
 
-    def transactions_after(start_date)
+    def transactions_after(start_date = last_month)
       params = DEFAULT_PARAMS.merge({initDate: start_date.strftime("%d/%m/%Y")})
       @scraper.post(URL1, {productId: id})
       @scraper.post(URL2, params)
 
 
     end
+
   end
 
 end
