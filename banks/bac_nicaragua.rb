@@ -98,9 +98,9 @@ class BacNicaragua < BankInterface
 
     def transactions_after(start_date = Account.last_month)
       params = DEFAULT_PARAMS.merge({initDate: start_date.strftime("%d/%m/%Y")})
-      @scraper.post(URL1, {productId: id})
+      @scraper.post(URL1, {productId: id}, 'singleSubmit(\'WatirPostForm\')')
       sleep 1 # Let's give it some time to catch up...
-      @scraper.post(URL2, params)
+      @scraper.post(URL2, params, 'singleSubmit(\'WatirPostForm\')')
 
 
     end
