@@ -1,5 +1,6 @@
 require 'watir-webdriver'
 
+require_relative 'watir-webdriver-post'
 require_relative 'abstract_interface'
 require_relative 'account_interface'
 require_relative 'hash_to_openstruct'

@@ -26,9 +26,11 @@ class BacNicaragua < BankInterface
     @scraper.text_field(name: 'pass').set @data.login.password
     @scraper.button(name: 'confirm').click
 
-    raise SignInError, "Wrong Username or Password" if @scraper.text_field(name: 'pass').exists?
+    raise SignInError, "Wrong Username or Password" if signed_out?
     raise SignInError, "Throttled, too many sessions" if @scraper.url == "https://www1.sucursalelectronica.com/ebac/common/showSessionRestriction.go"
     logger.debug "signed in"
+
+    @accounts = nil # Product IDs change on every session so let's make sure we don't cache in between sessions
   end
 
   def accounts
@@ -56,12 +58,52 @@ class BacNicaragua < BankInterface
             acc.name = data[1].text
             acc.balance = data[3].text.gsub(',', '').to_f
             acc.id = account.forms[1].input(name: 'productId').value
+            acc.scraper = @scraper
 
             accounts[account_type] << acc
           end
         end
         accounts
       end
+  end
+
+  def sign_out
+    @scraper.a(href: /logout.go$/).click
+    raise "Error signing out" if signed_in?
+  end
+
+  private
+  def signed_out?
+    @scraper.text_field(name: 'pass').exists?
+  end
+
+  def signed_in?
+    !signed_out?
+  end
+
+  class Account < AccountInterface
+    # BacNicaragua needs TWO URLs, one to set the selected account in the session, the other for grabbing the data we want
+    URL1 = 'https://www1.sucursalelectronica.com/ebac/module/accountstate/accountState.go'
+    URL2 = 'https://www1.sucursalelectronica.com/ebac/module/bankaccountstate/bankAccountState.go'
+
+    DEFAULT_PARAMS = {
+        serverDate:	Date.today.strftime("%d/%m/%Y"),
+        lastMonthDate: (Date.today - Date.today.day).strftime("%d/%m/%Y")
+#    initDate	01/02/2016
+#    endDate	07/02/2016
+#    initAmount
+#    limitAmount
+#    initReference
+#    endReference
+    }
+
+    def transactions_after(start_date)
+      params = DEFAULT_PARAMS.merge({initDate: start_date.srtftime("%d/%m/%Y")})
+      @scraper.post(URL1, {productId: id})
+      @scraper.post(URL2, params)
+
+
+    end
   end
 
 end
