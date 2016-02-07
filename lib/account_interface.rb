@@ -32,12 +32,12 @@ class BankInterface
     end
 
     protected
-    def one_month_ago
+    def self.one_month_ago
       d = Date.today
       d - (d - d.day).day
     end
 
-    def last_month
+    def self.last_month
       d = Date.today
       d - d.day
     end
