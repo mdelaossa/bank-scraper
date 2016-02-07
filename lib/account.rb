@@ -6,7 +6,7 @@ class Bank
     include AbstractInterface
     include Logging
 
-    attr_accessor :id, :number, :currency
+    attr_accessor :id, :number, :currency, :name, :balance
 
     ##
     # @param [DateTime] start_date Initial transcation date, inclusive
