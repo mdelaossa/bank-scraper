@@ -27,12 +27,10 @@ module Watir
       }
 
       post(arguments[0], arguments[1]);
-      return arguments[1]
       SCRIPT
 
-      args = execute_script script, url, params
+      execute_script script, url, params
       wait
-      args
     end
   end
 end
