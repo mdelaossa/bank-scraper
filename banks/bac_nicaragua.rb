@@ -21,6 +21,7 @@ class BacNicaragua < Bank
     @scraper.button(name: 'confirm').click
 
     raise SignInError, "Wrong Username or Password" if @scraper.text_field(name: 'pass').exists?
+    raise SignInError, "Throttled, too many sessions" if @scraper.url == "https://www1.sucursalelectronica.com/ebac/common/showSessionRestriction.go"
     logger.debug "signed in"
   end
 
