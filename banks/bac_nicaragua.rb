@@ -97,7 +97,7 @@ class BacNicaragua < BankInterface
     }
 
     def transactions_after(start_date)
-      params = DEFAULT_PARAMS.merge({initDate: start_date.srtftime("%d/%m/%Y")})
+      params = DEFAULT_PARAMS.merge({initDate: start_date.strftime("%d/%m/%Y")})
       @scraper.post(URL1, {productId: id})
       @scraper.post(URL2, params)
 
