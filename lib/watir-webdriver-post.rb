@@ -2,14 +2,15 @@ require 'watir-webdriver'
 
 module Watir
   class Browser
-    def post(url, params)
+    def post(url, params, callback = nil)
       script = <<-SCRIPT
-      function post(path, params) {
+      function post(path, params, callback) {
         method = "post";
 
         var form = document.createElement("form");
         form.setAttribute("method", method);
         form.setAttribute("action", path);
+        form.setAttribute("name", 'WatirPostForm');
 
         for(var key in params) {
             if(params.hasOwnProperty(key)) {
@@ -23,13 +24,18 @@ module Watir
         }
 
         document.body.appendChild(form);
-        form.submit();
+
+        if (callback) {
+          callback()
+        } else {
+          form.submit();
+        }
       }
 
-      post(arguments[0], arguments[1]);
+      post(arguments[0], arguments[1], arguments[2]);
       SCRIPT
 
-      execute_script script, url, params
+      execute_script script, url, params, callback
       wait
     end
   end
