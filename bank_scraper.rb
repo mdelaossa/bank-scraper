@@ -30,3 +30,6 @@ bank = Object.const_get(bank.split('_').collect(&:capitalize).join).new(options)
 bank.accounts.each do |account|
   puts account.number
 end
+
+# Finally, sign out of the bank if supported to avoid tying up sessions on banks that limit them
+bank.sign_out if bank.respond_to? :sign_out
