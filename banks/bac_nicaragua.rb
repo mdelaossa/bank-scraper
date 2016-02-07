@@ -15,7 +15,6 @@ class BacNicaragua < BankInterface
 
     raise MissingSignInDataError, "A username and password are required" unless @data.login.username && @data.login.password
 
-    sign_in
   end
 
   def sign_in
