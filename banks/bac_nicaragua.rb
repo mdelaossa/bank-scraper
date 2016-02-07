@@ -7,7 +7,7 @@ class BacNicaragua < Bank
   ACCOUNT_TYPES = {
       banking: /^CUENTAS BANCARIAS/,
       credit: /^CUENTAS DE CRÉDITO/,
-      loans: /^PRÉSTAMOS/
+      loan: /^PRÉSTAMOS/
   }
 
   def initialize(data)
@@ -43,8 +43,7 @@ class BacNicaragua < Bank
           logger.debug "Found account type: #{account_type}"
 
           type.trs.each do |account|
-            # If not empty, it's a header. Skip
-            next unless ACCOUNT_TYPES.select {|k,v| v=~ account.text}.empty?
+            next if account.spans.size == 0 # Skip rows without account data
             next if account.spans.first.class_name == 'tableTitle' # Skip title rows
 
             data = account.spans
@@ -53,9 +52,9 @@ class BacNicaragua < Bank
 
             acc = Account.new
             acc.currency = data[4].text == 'COR' ? 'NIO' : data[4].text
-            acc.number = data[2].text.to_i
+            acc.number = data[2].text
             acc.name = data[1].text
-            acc.balance = data[3].text.to_f
+            acc.balance = data[3].text.gsub(',', '').to_f
             acc.id = account.forms[1].input(name: 'productId').value
 
             accounts[account_type] << acc
