@@ -20,7 +20,7 @@ class BankInterface
     ##
     # @param [DateTime] start_date Initial transcation date, inclusive
     # @return [Array<Transaction>] All Transactions after start_time in chronological order
-    def transactions_after(start_date)
+    def transactions_after(start_date = last_month)
       Account.api_not_implemented(self)
     end
 
@@ -30,5 +30,17 @@ class BankInterface
     def transactions_after_ref(reference)
       Account.api_not_implemented(self)
     end
+
+    protected
+    def one_month_ago
+      d = Date.today
+      d - (d - d.day).day
+    end
+
+    def last_month
+      d = Date.today
+      d - d.day
+    end
+
   end
 end
