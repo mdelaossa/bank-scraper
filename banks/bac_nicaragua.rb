@@ -107,12 +107,17 @@ class BacNicaragua < BankInterface
     def transactions_between(start_date, end_date)
       params = DEFAULT_PARAMS.merge({initDate: start_date.strftime("%d/%m/%Y"), endDate: end_date.strftime('%d/%m/%Y')})
 
+      logger.debug "Getting transactions between #{start_date} and #{end_date}"
+
       callback = 'function (form) { singleSubmit(form); }'
 
       @scraper.post(URL1, {productId: id}, callback)
-      sleep 1 # Let's give it some time to catch up...
+      @scraper.input(name: 'initDate').wait_until_present
+      @scraper.wait_until { @scraper.input(name: 'initDate').value == (Date.today - Date.today.day + 1).strftime("%d/%m/%Y") }
       @scraper.post(URL2, params, callback)
-      sleep 1 # Let's give it some time to catch up...
+      @scraper.wait_until { @scraper.input(name: 'initDate').value == start_date.strftime("%d/%m/%Y") }
+
+      logger.debug "Actual dates from #{@scraper.input(name: 'initDate').value} to #{@scraper.input(name: 'endDate').value}"
 
       transactions_table = @scraper.tables(id: 'resultsTableOnTop')[1]
 
@@ -124,6 +129,8 @@ class BacNicaragua < BankInterface
 
         data[4] = data[4].gsub(',', '').to_f
         data[5] = data[5].gsub(',', '').to_f
+
+        logger.debug "Adding new transaction: #{data}"
 
         transaction = Transaction.new
         transaction.amount = data[4] == 0 ? data[5] : - data[4]
