@@ -36,6 +36,10 @@ class BacNicaragua < BankInterface
     @accounts ||=
       begin
 
+        raise NotSignedInError unless signed_in?
+
+        @scraper.goto "https://www1.sucursalelectronica.com/ebac/module/consolidatedQuery/consolidatedQuery.go#modal1"
+
         accounts = {}
         types = @scraper.tables(id: 'resultsTableOnTop')
         types.each do |type|
