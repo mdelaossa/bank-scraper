@@ -27,8 +27,11 @@ require_relative "./banks/#{bank}.rb"
 # Get our bank class object
 bank = Object.const_get(bank.split('_').collect(&:capitalize).join).new(options)
 
-bank.accounts.each do |account|
-  puts account.number
+bank.accounts.each do |type, accounts|
+  puts type
+  accounts.each do |account|
+    puts "#{account.name} - #{account.number}"
+  end
 end
 
 # Finally, sign out of the bank if supported to avoid tying up sessions on banks that limit them
