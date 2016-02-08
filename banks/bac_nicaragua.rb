@@ -96,7 +96,7 @@ class BacNicaragua < BankInterface
 #    endReference
     }
 
-    def transactions_after(start_date = Account.last_month)
+    def transactions_since(start_date = Account.last_month)
       params = DEFAULT_PARAMS.merge({initDate: start_date.strftime("%d/%m/%Y")})
 
       callback = 'function (form) { singleSubmit(form); }'

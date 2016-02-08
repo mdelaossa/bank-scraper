@@ -20,14 +20,14 @@ class BankInterface
     ##
     # @param [DateTime] start_date Initial transcation date, inclusive
     # @return [Array<Transaction>] All Transactions after start_time in chronological order
-    def transactions_after(start_date = last_month)
+    def transactions_since(start_date = last_month)
       Account.api_not_implemented(self)
     end
 
     ##
     # @param [String] reference
     # @return [Array<Transaction>] All Transactions after reference in chronological order
-    def transactions_after_ref(reference)
+    def transactions_since_ref(reference)
       Account.api_not_implemented(self)
     end
 
