@@ -77,11 +77,11 @@ class BacNicaragua < BankInterface
 
   private
   def signed_out?
-    @scraper.text_field(name: 'pass').exists?
+    !signed_in?
   end
 
   def signed_in?
-    !signed_out?
+    @scraper.a(href: /logout.go$/).exists?
   end
 
   class Account < AccountInterface
@@ -99,6 +99,8 @@ class BacNicaragua < BankInterface
 #    initReference
 #    endReference
     }
+
+# TODO: This stuff only works for :banking, need to add a switch for :credit and :loan types
 
     def transactions_since(start_date = Account.last_month)
       transactions_between(start_date, Date.today)
