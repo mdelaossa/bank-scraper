@@ -35,7 +35,7 @@ class BankInterface
     end
   end
 
-  class NotSignedInerror < RunTimeError
+  class NotSignedInerror < RuntimeError
     def initialize(msg = 'Not signed in!')
       super
     end
