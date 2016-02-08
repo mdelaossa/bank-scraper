@@ -48,7 +48,7 @@ class BacNicaragua < BankInterface
           logger.debug "Found account type: #{account_type}"
 
           type.trs.each do |account|
-            next if account.spans.size == 0 # Skip rows without account data
+            next unless account.spans.size == 5 # Skip rows without account data
             next if account.spans.first.class_name == 'tableTitle' # Skip title rows
 
             data = account.spans
