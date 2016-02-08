@@ -6,7 +6,7 @@ class BankInterface
     class TransactionInterface
       include Logging
 
-      attr_accessor :value, :currency, :description
+      attr_accessor :date, :amount, :payee, :number, :category
     end
   end
 end

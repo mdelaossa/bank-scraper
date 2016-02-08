@@ -97,17 +97,46 @@ class BacNicaragua < BankInterface
     }
 
     def transactions_since(start_date = Account.last_month)
-      params = DEFAULT_PARAMS.merge({initDate: start_date.strftime("%d/%m/%Y")})
+      transactions_between(start_date, Date.today)
+    end
+
+    def transactions_between(start_date, end_date)
+      params = DEFAULT_PARAMS.merge({initDate: start_date.strftime("%d/%m/%Y"), endDate: end_date.strftime('%d/%m/%Y')})
 
       callback = 'function (form) { singleSubmit(form); }'
 
       @scraper.post(URL1, {productId: id}, callback)
       sleep 1 # Let's give it some time to catch up...
       @scraper.post(URL2, params, callback)
+      sleep 1 # Let's give it some time to catch up...
 
+      transactions_table = @scraper.tables(id: 'resultsTableOnTop')[1]
 
+      transactions = []
+
+      transactions_table.trs.each do |transaction_row|
+        data = transaction_row.spans(class: 'tableData').map &:text
+        next if data.size != 7
+
+        data[4] = data[4].gsub(',', '').to_f
+        data[5] = data[5].gsub(',', '').to_f
+
+        transaction = Transaction.new
+        transaction.amount = data[4] == 0 ? data[5] : - data[4]
+        transaction.payee = data[3]
+        transaction.category = data[2]
+        transaction.number = data[1]
+        transaction.date = Date.strptime(data[0], '%d/%m/%Y')
+
+        transactions << transaction
+      end
+
+      transactions
     end
 
+    class Transaction < TransactionInterface
+
+    end
   end
 
 end
