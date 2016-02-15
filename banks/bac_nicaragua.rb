@@ -1,13 +1,23 @@
-require 'ostruct'
+require 'net/https'
+require 'uri'
+require 'open-uri'
+require 'json'
+require 'base64'
+require 'openssl'
+require 'savon'
 
 require_relative '../lib/bank_interface'
+
+
+
+### Net::ReadTimeout is a BIG possibility
 
 class BacNicaragua < BankInterface
 
   ACCOUNT_TYPES = {
-      banking: /^CUENTAS BANCARIAS/,
-      credit: /^CUENTAS DE CRÉDITO/,
-      loan: /^PRÉSTAMOS/
+      banking: 'CBK',
+      credit: 'TAR',
+      loan: 'LNS'
   }
 
   def initialize(data)
@@ -19,14 +29,37 @@ class BacNicaragua < BankInterface
 
   def sign_in
     logger.debug 'signing in'
-    @scraper.goto "https://www1.sucursalelectronica.com/redir/showLogin.go?country=NI"
 
-    @scraper.text_field(name: 'product').set @data.login.username
-    @scraper.text_field(name: 'pass').set @data.login.password
-    @scraper.button(name: 'confirm').click
+    uri = URI.parse "https://www.e-bac.net/sbefx/resources/jsonbac"
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = true
 
-    raise SignInError, "Wrong Username or Password" if signed_out?
-    raise SignInError, "Throttled, too many sessions" if @scraper.url == "https://www1.sucursalelectronica.com/ebac/common/showSessionRestriction.go"
+    request = Net::HTTP::Post.new(uri.request_uri)
+
+    data = prepare_payload("CANALESMOVILES_Usuario_Login", false)
+
+    # All '%2B's except the last if encrypted_password has a +
+    pattern = encrypted_password.include?('+') ? /%2B(?=.*%2B)/ : '%2B'
+    request.body = URI.encode_www_form(message: data).gsub(pattern, '+') # More dumb API requirements...
+    request.content_type = 'application/json'
+
+    response = http.request(request)
+
+    logger.debug response
+
+    if response.code == '200'
+      response = JSON.parse(response.body).to_ostruct
+      if response.message.header.errors
+        raise SignInError, response.message.header.errors.error.description
+      end
+    else
+      raise SignInError, "Unknown response: #{response.inspect}"
+    end
+
+    @token = response.message.header.origin.token
+    @country = response.message.body.authenticationView.country
+
+    raise SignInError, "Wrong Username or Password" if signed_out? || response.message.body.authenticationView.valid != '0'
     logger.debug "signed in"
 
     @accounts = nil # Product IDs change on every session so let's make sure we don't cache in between sessions
@@ -38,113 +71,252 @@ class BacNicaragua < BankInterface
 
         raise NotSignedInError unless signed_in?
 
-        @scraper.goto "https://www1.sucursalelectronica.com/ebac/module/consolidatedQuery/consolidatedQuery.go#modal1"
+        uri = URI.parse "https://www.e-bac.net/sbefx/resources/jsonbac"
+        http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = true
 
-        accounts = {}
-        types = @scraper.tables(id: 'resultsTableOnTop')
-        types.each do |type|
-          account_type = ACCOUNT_TYPES.select {|k,v| v =~ type.trs.first.text}.keys.first # We just want the key...
-          accounts[account_type] = []
-          logger.debug "Found account type: #{account_type}"
+        request = Net::HTTP::Post.new(uri.request_uri)
 
-          type.trs.each do |account|
-            next unless account.spans.size == 5 # Skip rows without account data
-            next if account.spans.first.class_name == 'tableTitle' # Skip title rows
+        data = prepare_payload("CANALESMOVILES_Usuario_Carga_Datos_Consolidado")
+        logger.debug "Getting accounts"
 
-            data = account.spans
+        logger.debug data
 
-            logger.debug "Adding new account: #{data.map &:text}"
+        request.body = URI.encode_www_form(message: data).gsub('%2B', '+') # More dumb API requirements...
+        request.content_type = 'application/json'
 
-            acc = Account.new
-            acc.currency = data[4].text == 'COR' ? 'NIO' : data[4].text
-            acc.number = data[2].text
-            acc.name = data[1].text
-            acc.balance = data[3].text.gsub(',', '').to_f
-            acc.id = account.forms[1].input(name: 'productId').value
-            acc.scraper = @scraper
+        response = http.request(request)
 
-            accounts[account_type] << acc
+        logger.debug response
+
+        raise "Error getting Accounts: Request returned code #{response.code}" if response.code != '200'
+
+        response = JSON.parse(response.body).to_ostruct
+
+        if response.message.header.errors
+          raise BankingError, "Error getting accounts: BAC error #{response.message.header.errors.error.description}"
+        end
+
+        @token = response.message.header.origin.token
+
+        accounts = []
+
+        response.message.body.userInfoView.userProductsView.internetAccounts.each do |internetAccount|
+          internetAccount['customers'].each do |customer|
+            customer['productViews'].each do |product|
+              logger.debug "Processing account data: #{product}"
+
+              product = product.to_ostruct
+
+              properties = {
+                  id: product.identifier,
+                  currency: product.productCurrency == 'COR' ? 'NIO' : product.productCurrency,
+                  name: product.shortName.empty? ? product.prdtTypeDescription : product.shortName,
+                  number: product.product,
+                  country: response.message.body.userInfoView.country,
+                  balance: product.available,
+                  type: ACCOUNT_TYPES.key(product.productType),
+                  bank: self
+              }
+              logger.debug "Adding new account: #{properties}"
+
+              accounts << Account.new(@data, properties)
+            end
           end
         end
+
         accounts
       end
   end
 
   def sign_out
-    @scraper.a(href: /logout.go$/).click
-    raise "Error signing out" if signed_in?
+    raise "NOT IMPLEMENTED" #TODO: IMPLEMENT
+    # raise "Error signing out" if signed_in?
   end
 
   private
+  def public_ip
+    @public_ip ||= open('http://whatismyip.akamai.com').read
+  end
+
+  def encrypted_password
+    c = OpenSSL::Cipher::Cipher.new 'des-ede3'
+    c.encrypt
+    c.key = "tmzr1oaua9cdfg+25-xpmn==" # Extracted from Android APK
+
+    Base64.strict_encode64(c.update(@data.login.password) + c.final)
+  end
+
+  ##
+  # This is a CRAZY method because of some really, really dumb 'requirements' by BAC's API (which I'm sure evolved
+  # from dumb events). Some keys need a + in certain places to be accepted server-side
+  def prepare_payload(operation_code, use_token = true)
+  key = {
+      identifier: @data.login.username,
+      country: @country || "CR",
+  }
+
+  if use_token
+    key[:company] = ""
+  else
+    key[:token] = ""
+    key[:password] = encrypted_password
+  end
+
+  key = key.to_json
+
+  target = {country: "CR"}.to_json.gsub('{','{+').gsub('}', '+}').gsub(':',':+')
+
+  { message: {
+      header: {
+          operationCode: operation_code,
+          origin: {
+              country: @country || "CR",
+              channel: "SECAN",
+              token: use_token ? @token : "",
+              user: @data.login.username,
+              server: public_ip
+          },
+          target: '%TARGET%'
+      },
+      key: '%KEY%'
+  } }.to_json.gsub(':', ':+').gsub('"%TARGET%"', target).gsub('"%KEY%"', key)
+
+  end
+
   def signed_out?
     !signed_in?
   end
 
   def signed_in?
-    @scraper.a(href: /logout.go$/).exists?
+    @token && !@token.empty?
   end
 
   class Account < AccountInterface
-    # BacNicaragua needs TWO URLs, one to set the selected account in the session, the other for grabbing the data we want
-    URL1 = 'https://www1.sucursalelectronica.com/ebac/module/accountstate/accountState.go'
-    URL2 = 'https://www1.sucursalelectronica.com/ebac/module/bankaccountstate/bankAccountState.go'
 
-    DEFAULT_PARAMS = {
-        serverDate:	Date.today.strftime("%d/%m/%Y"),
-        lastMonthDate: last_month.strftime("%d/%m/%Y"),
-        initDate: one_month_ago.strftime("%d/%m/%Y"),
-        endDate: Date.today.strftime("%d/%m/%Y")
-#    initAmount
-#    limitAmount
-#    initReference
-#    endReference
+    attr_accessor :country
+
+    attr_writer :data
+
+    OPERATION_CODE = {
+        banking: 'CANALESMOVILES_Cuenta_Consulta_Estado_Cuenta',
+        credit: 'CANALESMOVILES_Consulta_Estado_Cuenta_Tarjeta_Credito',
+        loan: '' # is there one? haven't found it
     }
 
-# TODO: This stuff only works for :banking, need to add a switch for :credit and :loan types
+    DEFAULT_HEADER = {
+        origin: {
+            country: 'CR',
+            channel: 'SECAN',
+            server: '31.183.60.185'
+        },
+        target: { country: 'CR'}
+    }
 
-    def transactions_since(start_date = Account.last_month)
-      transactions_between(start_date, Date.today)
+    DEFAULT_MESSAGE = {
+        banking: {
+          initialDate: last_month.strftime('%d/%m/%Y'),
+          finalDate: Date.today.strftime('%d/%m/%Y'),
+          referenceFrom: nil,
+          referenceTo: nil,
+          amountFrom: nil,
+          amountTo: nil
+        },
+        credit: {
+            statementSelected: nil,
+            productEntity: nil
+        },
+        loan: {}
+    }
+
+    def initialize(data = nil, properties = {})
+      options = {
+          wsdl: 'https://www.e-bac.net/sbefx/services/WebServicePublisherMessageSessionService/wsdl/WebServicePublisherMessageSessionService.wsdl',
+          env_namespace: :soap,
+          namespace_identifier: :frm
+      }
+      @client = ::Savon.client(options)
+      @data = data
+
+      properties.each do |name, value|
+        self.send("#{name}=", value)
+      end
+
+      set_defaults if @data
     end
 
-    def transactions_between(start_date, end_date)
-      params = DEFAULT_PARAMS.merge({initDate: start_date.strftime("%d/%m/%Y"), endDate: end_date.strftime('%d/%m/%Y')})
+    def transactions(options)
+      start_date = options[:start_date] || Account.last_month
+      end_date = options[:end_date] || Date.today
 
       logger.debug "Getting transactions between #{start_date} and #{end_date}"
 
-      callback = 'function (form) { singleSubmit(form); }'
-
-      @scraper.post(URL1, {productId: id}, callback)
-      @scraper.input(name: 'initDate').wait_until_present
-      @scraper.wait_until { @scraper.input(name: 'initDate').value == (Date.today - Date.today.day + 1).strftime("%d/%m/%Y") }
-      @scraper.post(URL2, params, callback)
-      @scraper.wait_until { @scraper.input(name: 'initDate').value == start_date.strftime("%d/%m/%Y") }
-
-      logger.debug "Actual dates from #{@scraper.input(name: 'initDate').value} to #{@scraper.input(name: 'endDate').value}"
-
-      transactions_table = @scraper.tables(id: 'resultsTableOnTop')[1]
-
       transactions = []
 
-      transactions_table.trs.each do |transaction_row|
-        data = transaction_row.spans(class: 'tableData').map &:text
-        next if data.size != 7
-
-        data[4] = data[4].gsub(',', '').to_f
-        data[5] = data[5].gsub(',', '').to_f
-
-        logger.debug "Adding new transaction: #{data}"
-
-        transaction = Transaction.new
-        transaction.amount = data[4] == 0 ? data[5] : - data[4]
-        transaction.payee = data[3]
-        transaction.category = data[2]
-        transaction.number = data[1]
-        transaction.date = Date.strptime(data[0], '%d/%m/%Y')
-
-        transactions << transaction
+      message = case @type
+                  when :banking
+                    DEFAULT_MESSAGE.deep_merge({initialDate: start_date, finalDate: end_date})
+                  when :credit, :loan
+                    DEFAULT_MESSAGE
       end
 
-      transactions
+      response = @client.call(:soap_domain_msg, message: {header: @header, key: message})
+
+      doc = response.body.to_ostruct
+
+      logger.debug "Got transactions from #{doc.key.initialDate} to #{doc.key.finalDate}"
+
+      doc.body.creditCardAccountStateView.movementsViews.each do |movement|
+        ## If `local` and `reference` are both 0, skip
+        #<movementsView>
+        #<local>102.650000000000005684341886080801486968994140625</local> #<- NIO
+				#			<notes>LA UNION ESQUIPULAS                   NI</notes>
+        #<number>ENE/06</number>
+				#			<reference>0</reference> #<- DOLLARS
+        #<time>ENE/06</time>
+				#		</movementsView>
+      end
+      doc.body.bankAccountStateView.bankAccountStateMovementViews.each do |movement|
+        ##
+        #<BankAccountStateMovementView>
+        #<amount>17.93</amount>
+				#			<balance>10262.56</balance>
+        #<code>AT</code>
+				#			<date>20160123</date>
+        #<dateLast>20160123</dateLast>
+				#			<details>RETIRO ATM 215507</details>
+        #<isDebit>1</isDebit>
+				#			<reference>75908905</reference>
+        #<stmacc>356513184</stmacc>
+				#			<stmccy>USD</stmccy>
+        #</BankAccountStateMovementView>
+      end
+
+      raise "Not done yet"
+    end
+
+    private
+    def set_defaults
+      raise Bankingerror, "Account: Missing login data" unless @data.login
+      @header = DEFAULT_HEADER.deep_merge({
+                                              operationCode: OPERATION_CODE[@type],
+                                              origin: {user: @data.login.username}
+                                          })
+
+      message = case @type
+                  when :banking
+                    {
+                        accountNumber: @number,
+                        country: @country
+                    }
+                  when :credit
+                    {
+                        productId: @number,
+                        productCountry: @country
+                    }
+                end
+
+      @message = DEFAULT_MESSAGE[@type].deep_merge(message)
     end
 
     class Transaction < TransactionInterface

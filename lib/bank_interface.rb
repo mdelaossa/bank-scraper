@@ -1,9 +1,7 @@
-require 'watir-webdriver'
-
-require_relative 'watir-webdriver-post'
-require_relative 'abstract_interface'
-require_relative 'account_interface'
+require_relative 'bank_interface/account_interface'
+require_relative 'bank_interface/exceptions.rb'
 require_relative 'hash_to_openstruct'
+require_relative 'deep_merge'
 
 class BankInterface
   include AbstractInterface
@@ -13,7 +11,6 @@ class BankInterface
     raise MissingSignInDataError if data[:login].empty?
 
     @data = data.to_ostruct
-    @scraper = Watir::Browser.new :phantomjs
   end
 
   ##
@@ -22,23 +19,4 @@ class BankInterface
   def accounts
     Bank.api_not_implemented(self)
   end
-
-  class MissingSignInDataError < RuntimeError
-    def initialize(msg = 'Please provide the bank\'s login details')
-      super
-    end
-  end
-
-  class SignInError < RuntimeError
-    def initialize(msg = 'Error signing in')
-      super
-    end
-  end
-
-  class NotSignedInerror < RuntimeError
-    def initialize(msg = 'Not signed in!')
-      super
-    end
-  end
-
 end
