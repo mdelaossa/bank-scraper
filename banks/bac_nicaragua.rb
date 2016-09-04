@@ -36,7 +36,7 @@ class BacNicaragua < BankInterface
     @accounts ||=
       begin
 
-        raise NotSignedInError unless signed_in?
+        raise SignInError, "Not signed in" unless signed_in?
 
         @scraper.goto "https://www1.sucursalelectronica.com/ebac/module/consolidatedQuery/consolidatedQuery.go#modal1"
 
@@ -86,8 +86,7 @@ class BacNicaragua < BankInterface
 
   class Account < AccountInterface
     # BacNicaragua needs TWO URLs, one to set the selected account in the session, the other for grabbing the data we want
-    URL1 = 'https://www1.sucursalelectronica.com/ebac/module/accountstate/accountState.go'
-    URL2 = 'https://www1.sucursalelectronica.com/ebac/module/bankaccountstate/bankAccountState.go'
+    URL = 'https://www1.sucursalelectronica.com/ebac/module/accountbalance/accountBalance.go'
 
     DEFAULT_PARAMS = {
         serverDate:	Date.today.strftime("%d/%m/%Y"),
@@ -113,20 +112,20 @@ class BacNicaragua < BankInterface
 
       callback = 'function (form) { singleSubmit(form); }'
 
-      @scraper.post(URL1, {productId: id}, callback)
+      @scraper.post(URL, {productId: id}, callback)
       @scraper.input(name: 'initDate').wait_until_present
       @scraper.wait_until { @scraper.input(name: 'initDate').value == (Date.today - Date.today.day + 1).strftime("%d/%m/%Y") }
-      @scraper.post(URL2, params, callback)
+      @scraper.post(URL, params, callback)
       @scraper.wait_until { @scraper.input(name: 'initDate').value == start_date.strftime("%d/%m/%Y") }
 
       logger.debug "Actual dates from #{@scraper.input(name: 'initDate').value} to #{@scraper.input(name: 'endDate').value}"
 
-      transactions_table = @scraper.tables(id: 'resultsTableOnTop')[1]
+      transactions_table = @scraper.tables(id: 'transactions')[0]
 
       transactions = []
 
-      transactions_table.trs.each do |transaction_row|
-        data = transaction_row.spans(class: 'tableData').map &:text
+      transactions_table.tbody.trs.each do |transaction_row|
+        data = transaction_row.tds.map &:text
         next if data.size != 7
 
         data[4] = data[4].gsub(',', '').to_f
